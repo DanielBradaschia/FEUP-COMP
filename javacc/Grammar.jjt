@@ -1,0 +1,322 @@
+options {
+    STATIC=false;
+    MULTI=true;
+    LOOKAHEAD=1;
+    NODE_SCOPE_HOOK=true;
+}
+
+PARSER_BEGIN(JmmParser)
+
+import java.util.LinkedHashMap;
+
+public class JmmParser {
+    private Table classTable = new Table();
+    private LinkedHashMap<String, Table> methods = new LinkedHashMap<String, Table>();
+    static private JmmParser instance;
+
+    static JmmParser getInstance() {
+        return instance;
+    }
+
+    static JmmParser setInstance(JmmParser inst) {
+        return instance = inst;
+    }
+
+    public Table getClassTable() {
+        return classTable;
+    }
+
+    public LinkedHashMap<String, Table> getMethods() {
+        return methods;
+    }
+
+    public boolean containsMethod(String identifier) {
+        return methods.containsKey(identifier);
+    }
+
+    public Table getMethod(String identifier) {
+        return methods.get(identifier);
+    }
+
+    public void addMethod(String identifier, Table table) {
+        if (methods.containsKey(identifier)) {
+            System.out.println("A method with that identifier already exists.");
+            return;
+        }
+        methods.put(identifier, table);
+    }
+
+    public void jjtreeOpenNodeScope(Node n) {
+        ((SimpleNode) n).setLine(getToken(1).beginLine);
+    }
+
+    public void jjtreeCloseNodeScope(Node n) {}
+
+    public void print() {
+        System.out.println("\nSYMBOL TABLE\n\nclass " + classTable.toString());
+        for (String s : methods.keySet()) {
+            System.out.println(methods.get(s).getType() + " " + s + " " + methods.get(s).toString());
+        }
+    }
+}
+PARSER_END(JmmParser)
+
+SKIP :
+{
+    " "
+    | "\t"
+    | "\r"
+    | "\n"
+    | < "//"(~["\r","\n"])* >
+    | < "/*" > : MLCOMMENT
+}
+
+<MLCOMMENT> SKIP :
+{
+  < "*/" > : DEFAULT
+| < ~[] >
+}
+
+TOKEN_MGR_DECLS : {
+    int errors = 0;
+}
+
+TOKEN :
+{
+    < INTEGER : (["0" - "9"])+ >
+    | < IMPORT : "import" >
+    | < CLASS : "class" >
+    | < EXTENDS : "extends" >
+    | < LEFTBRACKET : "{" >
+    | < RIGHTBRACKET : "}" >
+    | < LEFTPARENTHESES : "(" >
+    | < RIGHTPARENTHESES : ")" >
+    | < LEFTSQUAREBRACKET : "[" >
+    | < RIGHTSQUAREBRACKET : "]" >
+    | < INT : "int" >
+    | < BOOLEAN : "boolean" >
+    | < STRINGARRAY : "String[]" >
+    | < VOID : "void" >
+    | < COMMA : "," >
+    | < DOT : "." >
+    | < SEMICOLON : ";" >
+    | < PUBLIC : "public" >
+    | < STATIC : "static" >
+    | < MAIN : "main" >
+    | < IF : "if" >
+    | < ELSE : "else" >
+    | < WHILE : "while" >
+    | < RETURN: "return" >
+    | < EQUALS: "=" >
+    | < COMMERCIALE: "&&" >
+    | < MINOR: "<" >
+    | < ADDSUB: "+" | "-" >
+    | < MULDIV: "*" | "/" >
+    | < LENGTH: "length" >
+    | < TRUE: "true" >
+    | < FALSE: "false" >
+    | < THIS: "this" >
+    | < NEW: "new" >
+    | < EXCLAMATION: "!" >
+    | < IDENTIFIER : (["a" - "z"] | ["A" - "Z"] | "_" | "$")+ (["a" - "z"] | ["A" - "Z"] | ["0" - "9"] | "_" | "$")* >
+}
+
+SimpleNode program() : {}
+{
+    (Import() <SEMICOLON>)* classDeclaration() <EOF> {return jjtThis;}
+}
+
+void Import(): {Token t;}{
+    <IMPORT> [<STATIC> {jjtThis.isStatic=true;}] t=<IDENTIFIER>{jjtThis.className=t.image;} [<DOT> t=<IDENTIFIER> {jjtThis.methodName=t.image;}] ([<LEFTPARENTHESES> [ParamList()] <RIGHTPARENTHESES>] [ParamType()] )
+}
+void ParamList() : {}
+{
+    <VOID>|(type() (<COMMA> type())*)
+}
+
+void ParamType() : {}
+{
+    (<VOID>|type())
+}
+
+// NOSSO
+// void importDeclaration() #void: {}
+// {
+//     <IMPORT> (<STATIC>)* (importOption())*
+// }
+
+// void importOption() #void: {}
+// {
+//     <IDENTIFIER>|<DOT>|<LEFTPARENTHESES>|<RIGHTPARENTHESES>|<INT>|<VOID>|<BOOLEAN>|<STRINGARRAY>|<COMMA>|<LEFTSQUAREBRACKET>|<RIGHTSQUAREBRACKET>
+// }
+
+void classDeclaration() : {Token t, t1;}
+{
+    <CLASS> t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER [t1=<EXTENDS> (t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER) {jjtThis.index = t1.kind;}#EXTENDS(1)]
+    <LEFTBRACKET>
+        (varDeclaration())*
+        (t=<PUBLIC> (mainDeclaration() | methodDeclaration()) {jjtThis.index = t.kind;}#PUBLIC(1))*
+    <RIGHTBRACKET>
+}
+
+void mainDeclaration() : {Token t;}
+{
+    t=<STATIC> {jjtThis.index = t.kind;}#STATIC t=<VOID> {jjtThis.index = t.kind;}#VOID <MAIN> <LEFTPARENTHESES> t=<STRINGARRAY> {jjtThis.index = t.kind;}#STRINGARRAY t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER(1) <RIGHTPARENTHESES>
+    <LEFTBRACKET>
+        methodBody()
+    <RIGHTBRACKET>
+}
+
+void varDeclaration() : {Token t;}
+{
+    type() t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER <SEMICOLON>
+}
+
+void methodDeclaration() : {Token t;}
+{
+    type() t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER <LEFTPARENTHESES> (parameterDeclaration() ( <COMMA> parameterDeclaration())*)? <RIGHTPARENTHESES>
+    <LEFTBRACKET>
+        methodBody()
+        t=<RETURN> expression() {jjtThis.index = t.kind;}#RETURN(1) <SEMICOLON>
+    <RIGHTBRACKET>
+}
+
+void methodBody() : {}
+{
+    (LOOKAHEAD(2) varDeclaration())*
+    (statement())*
+}
+
+void parameterDeclaration() : {Token t;}
+{
+    type() t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER
+}
+
+void type() : {Token t;}
+{
+    (t=<INT> {jjtThis.index = t.kind;}#INT [t=<LEFTSQUAREBRACKET> {jjtThis.index = t.kind;}#LEFTSQUAREBRACKET t=<RIGHTSQUAREBRACKET> {jjtThis.index = t.kind;}#RIGHTSQUAREBRACKET]) |
+    (t=<BOOLEAN> {jjtThis.index = t.kind;}#BOOLEAN) |
+    (t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER)
+}
+
+void statement() #void : {Token t;}
+{
+    (<LEFTBRACKET> (statement())* <RIGHTBRACKET>)
+    | ifStatement()
+    | whileStatement()
+    | (expression() [t=<EQUALS> expression() {jjtThis.index = t.kind;}#EQUALS(2)] <SEMICOLON>)
+}
+
+void ifStatement() #void : {Token t;}
+{
+    t=<IF> condition()
+    body() {jjtThis.index = t.kind;}#IF(2)
+    t=<ELSE>
+    body() {jjtThis.index = t.kind;}#ELSE(1)
+}
+
+void whileStatement() #void: {Token t, t1;}
+{
+    t=<WHILE>
+    try {
+        condition()
+    }
+    catch (ParseException e) {
+        System.out.println(e.toString());
+        {token_source.errors++;
+                System.out.println("10 errors found, stopping program!");
+                throw new ParseException();
+        }
+        do {
+            t1 = getNextToken();
+        } while (t1.kind != RIGHTPARENTHESES);
+    }
+    body()
+    {jjtThis.index = t.kind;}#WHILE(2)
+}
+
+void condition() : {}
+{
+    <LEFTPARENTHESES> expression() <RIGHTPARENTHESES>
+}
+
+void body() : {}
+{
+    statement()
+}
+
+void expression() #void: {Token t;}
+{
+    expression2() (
+        t=<COMMERCIALE> expression2() {jjtThis.index = t.kind;}#COMMERCIALE(2)
+    )*
+}
+
+void expression2() #void: {Token t;}
+{
+    expression3() (
+        t=<MINOR> expression3() {jjtThis.index = t.kind;}#MINOR(2)
+    )*
+}
+
+void expression3() #void: {Token t;}
+{
+    expression4() (
+        t=<ADDSUB> expression4() {jjtThis.name = t.image;}#ADDSUB(2)
+    )*
+}
+
+void expression4() #void: {Token t;}
+{
+    expression5() (
+        t=<MULDIV> expression5() {jjtThis.name = t.image;}#MULDIV(2)
+    )*
+}
+
+void expression5() #void: {}
+{
+    expression6() [array() #array(2)]
+}
+
+void expression6() #void: {Token t, t1;}
+{
+    expression7() |
+    t=<EXCLAMATION> expression6() {jjtThis.index = t.kind;}#EXCLAMATION(1)
+}
+
+void expression7() #void: {Token t, t1;}
+{
+    expressionfinal() (
+        t=<DOT> (
+            (t1=<LENGTH> {jjtThis.index = t1.kind;}#LENGTH)
+            | (functionCall())
+        )
+        {jjtThis.index = t.kind;}#DOT(2)
+    )*
+}
+
+void functionCall() : {Token t;}
+{
+    t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER <LEFTPARENTHESES> (parameters())? <RIGHTPARENTHESES>
+}
+
+void parameters() : {}
+{
+    expression() (<COMMA> expression())*
+}
+
+void expressionfinal() #void: {Token t, t1;}
+{
+    (t=<INTEGER> {jjtThis.name = t.image;}#INTEGER)|
+    (t=<TRUE> {jjtThis.index = t.kind;}#TRUE) |
+    (t=<FALSE> {jjtThis.index = t.kind;}#FALSE) |
+    (t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER) |
+    (t=<THIS> {jjtThis.index = t.kind;}#THIS) |
+    (<LEFTPARENTHESES> expression() <RIGHTPARENTHESES>) |
+    (t1=<NEW> (((t=<INT> {jjtThis.index = t.kind;}#INT) array() #array(2) {jjtThis.index = t1.kind;}#NEW(1)) | ((t=<IDENTIFIER> {jjtThis.name = t.image;}#IDENTIFIER) {jjtThis.index = t1.kind;}#NEW(1) <LEFTPARENTHESES> <RIGHTPARENTHESES>) ))
+}
+
+void array() #void: {}
+{
+    <LEFTSQUAREBRACKET> expression() <RIGHTSQUAREBRACKET>
+}
